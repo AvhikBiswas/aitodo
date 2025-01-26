@@ -1,50 +1,65 @@
 "use client"
 
 import { useState, useEffect, useRef } from "react"
+import axios from "axios"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { Send, User } from "lucide-react"
-import { Bot } from "lucide-react"
+import { Send, User, Bot } from "lucide-react"
+import { Task } from "../types/task"
 
 interface Message {
-  role: "user" | "ai"
+  role: "user" | "assistant"
   content: string
 }
 
-export default function AIChatSection() {
+interface AIChatSectionProps {
+  onTasksGenerated: (tasks: any[]) => void
+}
+
+export default function AIChatSection({ onTasksGenerated }: AIChatSectionProps) {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState("")
-  const [isStreaming, setIsStreaming] = useState(false)
+  const [isLoading, setIsLoading] = useState(false)
   const scrollAreaRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (scrollAreaRef.current) {
       scrollAreaRef.current.scrollTop = scrollAreaRef.current.scrollHeight
     }
-  }, [scrollAreaRef]) // Updated dependency
+  }, [scrollAreaRef])
 
-  const handleSendMessage = async () => {
-    if (input.trim()) {
-      const userMessage: Message = { role: "user", content: input }
-      setMessages((prev) => [...prev, userMessage])
-      setInput("")
-      setIsStreaming(true)
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!input.trim()) return
 
-      // Simulating AI response streaming
-      const aiMessage: Message = { role: "ai", content: "" }
+    const userMessage: Message = { role: "user", content: input }
+    setMessages((prev) => [...prev, userMessage])
+    setInput("")
+    setIsLoading(true)
+
+    try {
+      // Get existing tasks for context
+      const existingTasks: Task[] = [] // You can pass existing tasks here if needed
+
+      // Call tasks API with text and existing tasks
+      const response = await axios.post("/api/tasks", { 
+        text: input,
+        tasks: existingTasks
+      })
+
+      const aiMessage: Message = { role: "assistant", content: response.data.messageForUser }
       setMessages((prev) => [...prev, aiMessage])
 
-      const response = "This is a simulated AI response that will be streamed character by character."
-      for (let i = 0; i < response.length; i++) {
-        await new Promise((resolve) => setTimeout(resolve, 50))
-        setMessages((prev) => [
-          ...prev.slice(0, -1),
-          { ...prev[prev.length - 1], content: prev[prev.length - 1].content + response[i] },
-        ])
+      if (response.data.data && Array.isArray(response.data.data)) {
+        onTasksGenerated(response.data.data)
       }
-
-      setIsStreaming(false)
+    } catch (error) {
+      console.error("Error sending message:", error)
+      const errorMessage: Message = { role: "assistant", content: "Sorry, there was an error processing your request." }
+      setMessages((prev) => [...prev, errorMessage])
+    } finally {
+      setIsLoading(false)
     }
   }
 
@@ -59,7 +74,7 @@ export default function AIChatSection() {
             key={index}
             className={`flex items-start space-x-2 mb-4 ${message.role === "user" ? "justify-end" : "justify-start"}`}
           >
-            {message.role === "ai" && (
+            {message.role === "assistant" && (
               <div className="w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center">
                 <Bot className="h-5 w-5 text-white" />
               </div>
@@ -74,7 +89,7 @@ export default function AIChatSection() {
             )}
           </div>
         ))}
-        {isStreaming && (
+        {isLoading && (
           <div className="flex items-center space-x-2">
             <div className="w-2 h-2 bg-gray-500 rounded-full animate-pulse"></div>
             <div className="w-2 h-2 bg-gray-500 rounded-full animate-pulse delay-75"></div>
@@ -82,20 +97,19 @@ export default function AIChatSection() {
           </div>
         )}
       </ScrollArea>
-      <div className="p-4 border-t">
+      <form onSubmit={handleSubmit} className="p-4 border-t">
         <div className="flex space-x-2">
           <Input
             value={input}
             onChange={(e) => setInput(e.target.value)}
             placeholder="Type your message..."
-            onKeyPress={(e) => e.key === "Enter" && handleSendMessage()}
+            disabled={isLoading}
           />
-          <Button onClick={handleSendMessage} disabled={isStreaming}>
+          <Button type="submit" disabled={isLoading}>
             <Send className="h-4 w-4" />
           </Button>
         </div>
-      </div>
+      </form>
     </div>
   )
 }
-
